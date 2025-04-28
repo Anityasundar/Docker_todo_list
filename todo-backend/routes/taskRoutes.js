@@ -17,6 +17,6 @@ router.route('/:id')
 router.post('/:id/complete', taskController.completeTask);
 router.post('/:id/share', taskController.shareTask);
 router.post('/:id/comments', taskController.addComment);
-router.get('/:id/comments', taskController.getComments);
+// router.get('/:id/comments', taskController.getComments);
 
 module.exports = router;

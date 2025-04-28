@@ -84,6 +84,8 @@ exports.createTask = async (req, res) => {
   }
 };
 
+// Other CRUD operations (getTask, updateTask, deleteTask) would follow similar patterns
+
 exports.shareTask = async (req, res) => {
   try {
     const { taskId } = req.params;
@@ -154,6 +156,142 @@ exports.addComment = async (req, res) => {
     });
     
     res.status(201).json(comment);
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+// ... (previous code)
+
+exports.getTask = async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const task = await Task.findByPk(id, {
+      include: [
+        { model: User, attributes: ['username'] },
+        { model: Category },
+        { model: User, as: 'collaborators', attributes: ['id', 'username'] },
+        { 
+          model: Comment, 
+          include: [{ model: User, attributes: ['username'] }],
+          order: [['createdAt', 'DESC']]
+        }
+      ]
+    });
+    
+    if (!task) {
+      return res.status(404).json({ message: 'Task not found' });
+    }
+    
+    // Check if user has access to the task
+    if (task.userId !== req.user.id && !(await task.hasCollaborator(req.user))) {
+      return res.status(403).json({ message: 'Not authorized to access this task' });
+    }
+    
+    res.json(task);
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+exports.updateTask = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { title, description, dueDate, priority, categoryId, isCompleted } = req.body;
+    
+    const task = await Task.findByPk(id);
+    
+    if (!task) {
+      return res.status(404).json({ message: 'Task not found' });
+    }
+    
+    if (task.userId !== req.user.id) {
+      return res.status(403).json({ message: 'Not authorized to update this task' });
+    }
+    
+    const updatedTask = await task.update({
+      title: title || task.title,
+      description: description !== undefined ? description : task.description,
+      dueDate: dueDate !== undefined ? dueDate : task.dueDate,
+      priority: priority || task.priority,
+      categoryId: categoryId !== undefined ? categoryId : task.categoryId,
+      isCompleted: isCompleted !== undefined ? isCompleted : task.isCompleted
+    });
+    
+    // Log activity
+    await ActivityLog.create({
+      action: 'update',
+      model: 'Task',
+      modelId: task.id,
+      userId: req.user.id,
+      data: JSON.stringify(updatedTask)
+    });
+    
+    res.json(updatedTask);
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+exports.deleteTask = async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const task = await Task.findByPk(id);
+    
+    if (!task) {
+      return res.status(404).json({ message: 'Task not found' });
+    }
+    
+    if (task.userId !== req.user.id) {
+      return res.status(403).json({ message: 'Not authorized to delete this task' });
+    }
+    
+    await task.destroy();
+    
+    // Log activity
+    await ActivityLog.create({
+      action: 'delete',
+      model: 'Task',
+      modelId: task.id,
+      userId: req.user.id,
+      data: JSON.stringify(task)
+    });
+    
+    res.json({ message: 'Task deleted successfully' });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+exports.completeTask = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { isCompleted } = req.body;
+    
+    const task = await Task.findByPk(id);
+    
+    if (!task) {
+      return res.status(404).json({ message: 'Task not found' });
+    }
+    
+    if (task.userId !== req.user.id && !(await task.hasCollaborator(req.user))) {
+      return res.status(403).json({ message: 'Not authorized to update this task' });
+    }
+    
+    const updatedTask = await task.update({ isCompleted });
+    
+    // Log activity
+    await ActivityLog.create({
+      action: isCompleted ? 'complete' : 'incomplete',
+      model: 'Task',
+      modelId: task.id,
+      userId: req.user.id,
+      data: JSON.stringify({ isCompleted })
+    });
+    
+    res.json(updatedTask);
   } catch (error) {
     res.status(500).json({ message: 'Server error', error: error.message });
   }
